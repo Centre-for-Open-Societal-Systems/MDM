@@ -1,0 +1,125 @@
+name: catalog-registry
+
+services:
+  # ---------------------------------------------------- Catalog Registry Staff API --
+  catalog-registry-staff-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: staff-api
+    image: catalog-registry-local/staff-api:dev
+    container_name: catalog-registry-staff-api
+    extra_hosts:
+      - "localhost:host-gateway"
+    environment:
+      REGISTRY_STAFF_PORTAL_API_APP_HOST: "0.0.0.0"
+      REGISTRY_STAFF_PORTAL_API_APP_PORT: 8000
+      STAFF_PORTAL_NO_OF_WORKERS: ${STAFF_PORTAL_WORKERS:-2}
+      
+      # Database Connection
+      REGISTRY_STAFF_PORTAL_API_DB_DRIVER: postgresql+asyncpg
+      REGISTRY_STAFF_PORTAL_API_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      REGISTRY_STAFF_PORTAL_API_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      REGISTRY_STAFF_PORTAL_API_DB_HOSTNAME: ${POSTGRES_HOST:-farmer-registry-postgres}
+      REGISTRY_STAFF_PORTAL_API_DB_PORT: ${POSTGRES_PORT:-5432}
+      REGISTRY_STAFF_PORTAL_API_DB_DBNAME: ${POSTGRES_DB:-catalog_registry_db}
+      
+      COMMON_DB_DRIVER: postgresql+asyncpg
+      COMMON_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      COMMON_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      COMMON_DB_HOSTNAME: ${POSTGRES_HOST:-farmer-registry-postgres}
+      COMMON_DB_PORT: ${POSTGRES_PORT:-5432}
+      COMMON_DB_DBNAME: ${POSTGRES_DB:-catalog_registry_db}
+      
+      REGISTRY_CORE_DB_DRIVER: postgresql+asyncpg
+      REGISTRY_CORE_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      REGISTRY_CORE_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      REGISTRY_CORE_DB_HOSTNAME: ${POSTGRES_HOST:-farmer-registry-postgres}
+      REGISTRY_CORE_DB_PORT: ${POSTGRES_PORT:-5432}
+      REGISTRY_CORE_DB_DBNAME: ${POSTGRES_DB:-catalog_registry_db}
+      
+      REGISTRY_EXTENSIONS_DB_DRIVER: postgresql+asyncpg
+      REGISTRY_EXTENSIONS_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      REGISTRY_EXTENSIONS_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      REGISTRY_EXTENSIONS_DB_HOSTNAME: ${POSTGRES_HOST:-farmer-registry-postgres}
+      REGISTRY_EXTENSIONS_DB_PORT: ${POSTGRES_PORT:-5432}
+      REGISTRY_EXTENSIONS_DB_DBNAME: ${POSTGRES_DB:-catalog_registry_db}
+      
+      # Object Storage (MinIO / S3)
+      REGISTRY_STAFF_PORTAL_API_MINIO_ENDPOINT: "${MINIO_ENDPOINT:-farmer-registry-minio:9000}"
+      REGISTRY_STAFF_PORTAL_API_MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-admin}"
+      REGISTRY_STAFF_PORTAL_API_MINIO_SECRET_KEY: "${MINIO_SECRET_KEY:-adminsecret}"
+      REGISTRY_STAFF_PORTAL_API_MINIO_SECURE: "${MINIO_SECURE:-false}"
+      REGISTRY_STAFF_PORTAL_API_MINIO_BUCKET_NAME: default-bucket
+      REGISTRY_STAFF_PORTAL_API_TEMPLATE_BUCKET_NAME: templates
+      
+      # Authentication & Security
+      REGISTRY_STAFF_PORTAL_API_AUTH_ENABLED: "${AUTH_ENABLED:-false}"
+      REGISTRY_STAFF_PORTAL_API_CSRF_ENABLED: "false"
+      REGISTRY_STAFF_PORTAL_API_AUTH_PROVIDER_API_URL: "${IAM_API_URL:-http://farmer-registry-iam-staff-api:8000}"
+      REGISTRY_STAFF_PORTAL_API_KEYCLOAK_CLIENT_ID: catalog-registry-staff-portal
+      REGISTRY_STAFF_PORTAL_API_AUTH_REDIS_URL: "${REDIS_URL:-redis://farmer-registry-redis:6379/0}"
+      
+      COMMON_AUTH_ENABLED: "${AUTH_ENABLED:-false}"
+      COMMON_AUTH_PROVIDER_API_URL: "${IAM_API_URL:-http://farmer-registry-iam-staff-api:8000}"
+      COMMON_KEYCLOAK_CLIENT_ID: catalog-registry-staff-portal
+      COMMON_AUTH_REDIS_URL: "${REDIS_URL:-redis://farmer-registry-redis:6379/0}"
+      COMMON_AUTH_VERIFY_SSL: "false"
+      
+      REGISTRY_CORE_AUTH_PROVIDER_API_URL: "${IAM_API_URL:-http://farmer-registry-iam-staff-api:8000}"
+      REGISTRY_CORE_KEYCLOAK_CLIENT_ID: catalog-registry-staff-portal
+      REGISTRY_CORE_AUTH_REDIS_URL: "${REDIS_URL:-redis://farmer-registry-redis:6379/0}"
+      REGISTRY_CORE_AUTH_VERIFY_SSL: "false"
+      
+      # Extension Module & APIs
+      REGISTRY_EXTENSION_MODULE: openg2p_registry_catalog_extension
+      REGISTRY_STAFF_PORTAL_API_AUDIT_ENABLED: "false"
+      REGISTRY_STAFF_PORTAL_API_OPENAPI_ROOT_PATH: /
+      REGISTRY_STAFF_PORTAL_API_CORS_ALLOW_ORIGINS: '["*"]'
+      REGISTRY_STAFF_PORTAL_API_AWE_ENABLED: "false"
+    volumes:
+      - ./catalog-extension/src/openg2p_registry_catalog_extension:/usr/local/lib/python3.12/site-packages/openg2p_registry_catalog_extension
+    ports:
+      - "${CATALOG_API_PORT:-8002}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ping')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---------------------------------------------------- Catalog Registry Staff UI --
+  catalog-registry-staff-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: staff-ui
+    image: catalog-registry-local/staff-ui:dev
+    container_name: catalog-registry-staff-ui
+    extra_hosts:
+      - "localhost:host-gateway"
+    depends_on:
+      catalog-registry-staff-api:
+        condition: service_healthy
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      BACKEND_API_URL: "http://catalog-registry-staff-api:8000"
+      MASTERDATA_BACKEND_API_URL: "${MASTERDATA_API_URL:-http://farmer-registry-master-data-api:8000}"
+      DEFAULT_LOCALE: en
+      PARTNER_IMPORT_EXPORT_ENABLE: "true"
+      PAGE_SIZE: 10
+      IAM_URL: "${IAM_API_URL:-http://farmer-registry-iam-staff-api:8000}"
+      KEYCLOAK_LOGOUT_URL: "${KEYCLOAK_LOGOUT_URL:-http://localhost:8080/realms/staff/protocol/openid-connect/logout}"
+      LOGIN_PROVIDER_ID: "1"
+      APPLICATION_MNEMONIC: catalog-registry-staff-portal
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-localhost}
+      REDIRECT_URL: "${STAFF_UI_REDIRECT_URL:-http://localhost:3002}"
+    ports:
+      - "${CATALOG_UI_PORT:-3002}:3000"
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ${DOCKER_NETWORK:-farmer-registry_default}
